@@ -137,6 +137,17 @@ static void _logger_log_item_store(logentry *e, const entry_details *d, const vo
     e->size = sizeof(struct logentry_item_store) + nkey;
 }
 
+static void _logger_log_item_deleted(logentry *e, const entry_details *d, const void *entry, va_list ap) {
+    item *it = (item *)entry;
+    struct logentry_deletion *le = (struct logentry_deletion *) e->data;
+    le->nkey = it->nkey;
+    le->it_flags = it->it_flags;
+    le->nbytes = it->nbytes;
+    le->clsid = ITEM_clsid(it);
+    memcpy(le->key, ITEM_key(it), it->nkey);
+    e->size = sizeof(struct logentry_deletion) + le->nkey;
+}
+
 static void _logger_log_conn_event(logentry *e, const entry_details *d, const void *entry, va_list ap) {
     struct sockaddr_in6 *addr = va_arg(ap, struct sockaddr_in6 *);
     socklen_t addrlen = va_arg(ap, socklen_t);
@@ -248,6 +259,20 @@ static int _logger_parse_ee(logentry *e, char *scratch) {
             (long long int)le->exptime, le->latime, le->clsid,
             le->nbytes > 0 ? le->nbytes - 2 : 0); // CLRF
 
+    return total;
+}
+
+static int _logger_parse_ide(logentry *e, char *scratch) {
+    int total;
+    const char *cmd = "na";
+    char keybuf[KEY_MAX_URI_ENCODED_LENGTH];
+    struct logentry_deletion *le = (struct logentry_deletion *) e->data;
+    uriencode(le->key, keybuf, le->nkey, KEY_MAX_URI_ENCODED_LENGTH);
+    total = snprintf(scratch, LOGGER_PARSE_SCRATCH,
+                     "ts=%d.%d gid=%llu type=deleted key=%s cmd=%s clsid=%u size=%d\n",
+                     (int)e->tv.tv_sec, (int)e->tv.tv_usec, (unsigned long long) e->gid,
+                     keybuf,cmd, le->clsid,
+                     le->nbytes > 0 ? le->nbytes - 2 : 0); // CLRF
     return total;
 }
 
@@ -382,6 +407,7 @@ static const entry_details default_entries[] = {
     },
     [LOGGER_CONNECTION_NEW] = {512, LOG_CONNEVENTS, _logger_log_conn_event, _logger_parse_cne, NULL},
     [LOGGER_CONNECTION_CLOSE] = {512, LOG_CONNEVENTS, _logger_log_conn_event, _logger_parse_cce, NULL},
+    [LOGGER_DELETIONS] = {512, LOG_DELETIONS, _logger_log_item_deleted, _logger_parse_ide, NULL},
 #ifdef EXTSTORE
     [LOGGER_EXTSTORE_WRITE] = {512, LOG_EVICTIONS, _logger_log_ext_write, _logger_parse_extw, NULL},
     [LOGGER_COMPACT_START] = {512, LOG_SYSEVENTS, _logger_log_text, _logger_parse_text,
