@@ -281,7 +281,20 @@ static void crawler_metadump_eval(crawler_module_t *cm, item *it, uint32_t hv, i
     // TODO: uriencode directly into the buffer.
     uriencode(ITEM_key(it), keybuf, it->nkey, KEY_MAX_URI_ENCODED_LENGTH);
     int total = snprintf(cm->c.buf + cm->c.bufused, 4096,
-            "key=%s exp=%ld la=%llu cas=%llu fetch=%s cls=%u size=%lu flags=%llu\n",
+         "key=%s exp=%ld la=%llu cas=%llu fetch=%s cls=%u size=%lu flags=%llu\n",
+         keybuf,
+         (it->exptime == 0) ? -1 : (long)(it->exptime + process_started),
+         (unsigned long long)(it->time + process_started),
+         (unsigned long long)ITEM_get_cas(it),
+         (it->it_flags & ITEM_FETCHED) ? "yes" : "no",
+         ITEM_clsid(it),
+         (unsigned long) ITEM_ntotal(it),
+         (unsigned long long)flags);
+#ifdef EXTSTORE
+    if (it->it_flags & ITEM_HDR) {
+        item_hdr *hdr = (item_hdr *)ITEM_data(it);
+        total = snprintf(cm->c.buf + cm->c.bufused, 4096,
+            "key=%s exp=%ld la=%llu cas=%llu fetch=%s cls=%u size=%lu flags=%llu pageid=%hu version=%u offset=%u\n",
             keybuf,
             (it->exptime == 0) ? -1 : (long)(it->exptime + process_started),
             (unsigned long long)(it->time + process_started),
@@ -289,7 +302,13 @@ static void crawler_metadump_eval(crawler_module_t *cm, item *it, uint32_t hv, i
             (it->it_flags & ITEM_FETCHED) ? "yes" : "no",
             ITEM_clsid(it),
             (unsigned long) ITEM_ntotal(it),
-            (unsigned long long)flags);
+            (unsigned long long)flags,
+            hdr->page_id,
+            hdr->page_version,
+            hdr->offset);
+    }
+#endif
+
     refcount_decr(it);
     // TODO: some way of tracking the errors. these should be impossible given
     // the space requirements.
